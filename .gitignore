@@ -1,0 +1,10 @@
+# Temporary files
+.DS_Store
+Thumbs.db
+
+# Git-crypt - NO subir la key al repositorio
+git-crypt-key*
+
+/.vscode
+/.idea
+/.cursor

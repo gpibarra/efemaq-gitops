@@ -1,0 +1,14 @@
+---
+# Handlers para Traefik
+
+- name: restart traefik
+  ansible.builtin.command: docker service update --force {{ traefik_service_name }}
+  when: traefik_deploy_mode == "swarm"
+  changed_when: true
+
+- name: restart traefik container
+  community.docker.docker_container:
+    name: "{{ traefik_container_name }}"
+    state: started
+    restart: true
+  when: traefik_deploy_mode == "standalone"

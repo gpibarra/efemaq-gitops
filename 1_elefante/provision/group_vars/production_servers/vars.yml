@@ -1,0 +1,29 @@
+---
+# Variables específicas para servidores de producción (PÚBLICAS - SIN ENCRIPTAR)
+# Los secretos están en secrets.yml (encriptado con git-crypt)
+env: production
+
+# Configuración de Docker para producción
+docker_daemon_options:
+  log-driver: "json-file"
+  log-opts:
+    max-size: "50m"
+    max-file: "5"
+  storage-driver: "overlay2"
+  experimental: false
+  debug: false
+  live-restore: true
+
+# Traefik en producción - Usar Let's Encrypt
+traefik_ssl_mode: "letsencrypt"
+traefik_log_level: "INFO"
+traefik_ssl_redirect: true  # Redirigir HTTP a HTTPS en producción
+traefik_acme_ca_server: "https://acme-v02.api.letsencrypt.org/directory"  # Production
+
+# Portainer en producción
+portainer_enable_edge_compute: true
+portainer_use_traefik: true  # Activar para usar con Traefik y SSL automático
+
+# Seguridad mejorada en producción
+firewall_enabled: true
+fail2ban_enabled: true

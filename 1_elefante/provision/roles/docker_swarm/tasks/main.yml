@@ -1,0 +1,100 @@
+---
+# Tareas principales para configuración de Docker Swarm
+
+- name: Check if Swarm is already initialized
+  ansible.builtin.command: docker info --format '{{"{{"}}.Swarm.LocalNodeState{{"}}"}}'
+  register: swarm_status
+  changed_when: false
+  failed_when: false
+  tags: ['swarm', 'check']
+
+- name: Initialize Docker Swarm (manager mode)
+  ansible.builtin.command: >
+    docker swarm init
+    --advertise-addr {{ swarm_advertise_addr }}
+    --listen-addr {{ swarm_listen_addr }}
+  when:
+    - swarm_mode == "manager"
+    - swarm_status.stdout != "active"
+  register: swarm_init
+  tags: ['swarm', 'init']
+
+- name: Get manager join token
+  ansible.builtin.command: docker swarm join-token manager -q
+  register: swarm_manager_token
+  when:
+    - swarm_mode == "manager"
+    - swarm_status.stdout == "active"
+  changed_when: false
+  tags: ['swarm', 'token']
+
+- name: Get worker join token
+  ansible.builtin.command: docker swarm join-token worker -q
+  register: swarm_worker_token
+  when:
+    - swarm_mode == "manager"
+    - swarm_status.stdout == "active"
+  changed_when: false
+  tags: ['swarm', 'token']
+
+- name: Join Swarm as worker
+  ansible.builtin.command: >
+    docker swarm join
+    --token {{ swarm_join_token }}
+    {{ swarm_manager_address }}
+  when:
+    - swarm_mode == "worker"
+    - swarm_status.stdout != "active"
+    - swarm_join_token is defined
+    - swarm_manager_address is defined
+  tags: ['swarm', 'join']
+
+- name: Create overlay network
+  community.docker.docker_network:
+    name: "{{ swarm_network_name }}"
+    driver: "{{ swarm_network_driver }}"
+    driver_options:
+      encrypted: "true"
+    attachable: "{{ swarm_network_attachable }}"
+    scope: swarm
+  when:
+    - swarm_mode == "manager"
+    - swarm_status.stdout == "active" or swarm_init is changed
+  tags: ['swarm', 'network']
+
+- name: Apply node labels
+  ansible.builtin.command: >
+    docker node update
+    --label-add {{ item.key }}={{ item.value }}
+    {{ ansible_hostname }}
+  loop: "{{ swarm_node_labels | dict2items }}"
+  when:
+    - swarm_mode == "manager"
+    - swarm_node_labels | length > 0
+  tags: ['swarm', 'labels']
+
+- name: Set node availability
+  ansible.builtin.command: >
+    docker node update
+    --availability {{ swarm_node_availability }}
+    {{ ansible_hostname }}
+  when:
+    - swarm_mode == "manager"
+    - swarm_node_availability is defined
+  changed_when: false
+  tags: ['swarm', 'availability']
+
+- name: Display Swarm status
+  ansible.builtin.command: docker node ls
+  register: swarm_nodes
+  when: swarm_mode == "manager"
+  changed_when: false
+  tags: ['swarm', 'verify']
+
+- name: Show Swarm nodes
+  ansible.builtin.debug:
+    msg: "{{ swarm_nodes.stdout_lines }}"
+  when:
+    - swarm_mode == "manager"
+    - swarm_nodes is defined
+  tags: ['swarm', 'verify']

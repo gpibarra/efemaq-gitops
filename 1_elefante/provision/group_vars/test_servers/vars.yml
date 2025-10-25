@@ -1,0 +1,26 @@
+---
+# Variables específicas para servidores de test (PÚBLICAS - SIN ENCRIPTAR)
+# Los secretos están en secrets.yml (encriptado con git-crypt)
+env: test
+
+domain_name: "test.efemaq.com.ar"
+
+# Configuración de Docker para test
+docker_daemon_options:
+  log-driver: "json-file"
+  log-opts:
+    max-size: "10m"
+    max-file: "3"
+  storage-driver: "overlay2"
+  experimental: true
+  debug: true
+
+# Traefik en test - Usar certificados autofirmados
+traefik_ssl_mode: "selfsigned"
+traefik_log_level: "DEBUG"
+traefik_ssl_redirect: false  # No redirigir HTTP a HTTPS en test
+traefik_dashboard_insecure: false  # Dashboard via dynamic config con SSL y auth
+
+# Portainer en test
+portainer_enable_edge_compute: false
+portainer_use_traefik: true  # Activar para usar con Traefik

@@ -1,0 +1,125 @@
+---
+# Playbook para backup de configuraciones y datos
+- name: Backup Docker Swarm Volumes and Configs
+  hosts: all
+  become: true
+  vars:
+    backup_dir: "/backup"
+    backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+  tasks:
+    - name: Create backup directory
+      ansible.builtin.file:
+        path: "{{ backup_dir }}/{{ backup_timestamp }}"
+        state: directory
+        mode: '0755'
+      tags: ['backup', 'setup']
+
+    - name: Backup Portainer data
+      ansible.builtin.shell: |
+        docker run --rm \
+          -v portainer_data:/data \
+          -v {{ backup_dir }}/{{ backup_timestamp }}:/backup \
+          ubuntu tar czf /backup/portainer-data.tar.gz /data
+      args:
+        creates: "{{ backup_dir }}/{{ backup_timestamp }}/portainer-data.tar.gz"
+      tags: ['backup', 'portainer']
+
+    - name: Backup Traefik data (certificates and config)
+      ansible.builtin.shell: |
+        docker run --rm \
+          -v /var/lib/traefik:/data \
+          -v /etc/traefik:/config \
+          -v {{ backup_dir }}/{{ backup_timestamp }}:/backup \
+          ubuntu tar czf /backup/traefik-data.tar.gz /data /config
+      args:
+        creates: "{{ backup_dir }}/{{ backup_timestamp }}/traefik-data.tar.gz"
+      tags: ['backup', 'traefik']
+
+    - name: Export Docker Swarm configuration
+      ansible.builtin.shell: |
+        docker node ls --format "{{{{ '{{' }}.ID{{ '}}' }}\t{{{{ '{{' }}.Hostname{{ '}}' }}\t{{{{ '{{' }}.Status{{ '}}' }}\t{{{{ '{{' }}.Availability{{ '}}' }}\t{{{{ '{{' }}.ManagerStatus{{ '}}' }}" > {{ backup_dir }}/{{ backup_timestamp }}/swarm-nodes.txt
+        docker service ls --format "{{{{ '{{' }}.ID{{ '}}' }}\t{{{{ '{{' }}.Name{{ '}}' }}\t{{{{ '{{' }}.Mode{{ '}}' }}\t{{{{ '{{' }}.Replicas{{ '}}' }}\t{{{{ '{{' }}.Image{{ '}}' }}" > {{ backup_dir }}/{{ backup_timestamp }}/swarm-services.txt
+        docker network ls --filter driver=overlay --format "{{{{ '{{' }}.ID{{ '}}' }}\t{{{{ '{{' }}.Name{{ '}}' }}\t{{{{ '{{' }}.Driver{{ '}}' }}\t{{{{ '{{' }}.Scope{{ '}}' }}" > {{ backup_dir }}/{{ backup_timestamp }}/swarm-networks.txt
+      args:
+        creates: "{{ backup_dir }}/{{ backup_timestamp }}/swarm-nodes.txt"
+      tags: ['backup', 'swarm']
+
+    - name: Backup Docker daemon configuration
+      ansible.builtin.copy:
+        src: /etc/docker/daemon.json
+        dest: "{{ backup_dir }}/{{ backup_timestamp }}/docker-daemon.json"
+        remote_src: true
+        mode: '0644'
+      tags: ['backup', 'docker']
+
+    - name: List Docker images
+      ansible.builtin.command: docker images --format "{{ '{{' }}.Repository{{ '}}' }}:{{ '{{' }}.Tag{{ '}}' }}"
+      register: docker_images_list
+      changed_when: false
+      tags: ['backup', 'docker']
+
+    - name: Save Docker images list
+      ansible.builtin.copy:
+        content: "{{ docker_images_list.stdout }}"
+        dest: "{{ backup_dir }}/{{ backup_timestamp }}/docker-images.txt"
+        mode: '0644'
+      tags: ['backup', 'docker']
+
+    - name: Get Docker version
+      ansible.builtin.command: docker --version
+      register: docker_version_output
+      changed_when: false
+      tags: ['backup', 'info']
+
+    - name: Get Docker Swarm status
+      ansible.builtin.command: docker info --format '{{{{ "{{" }}.Swarm.LocalNodeState{{ "}}" }}'
+      register: swarm_status_output
+      changed_when: false
+      failed_when: false
+      tags: ['backup', 'info']
+
+    - name: Get Swarm node role
+      ansible.builtin.command: docker info --format '{{{{ "{{" }}.Swarm.ControlAvailable{{ "}}" }}'
+      register: swarm_role_output
+      changed_when: false
+      failed_when: false
+      when: swarm_status_output.stdout == "active"
+      tags: ['backup', 'info']
+
+    - name: Create backup summary
+      ansible.builtin.copy:
+        content: |
+          Backup created: {{ backup_timestamp }}
+          Hostname: {{ ansible_hostname }}
+          Environment: {{ env }}
+          Docker version: {{ docker_version_output.stdout | default('N/A') }}
+          Docker Swarm status: {{ swarm_status_output.stdout | default('N/A') }}
+          Swarm node role: {{ 'manager' if (swarm_role_output.stdout | default('false')) == 'true' else 'worker' }}
+
+          Backed up components:
+          - Portainer data volume
+          - Traefik data and configuration
+          - Docker Swarm nodes configuration
+          - Docker Swarm services list
+          - Docker Swarm overlay networks
+          - Docker daemon configuration
+          - Docker images list
+        dest: "{{ backup_dir }}/{{ backup_timestamp }}/backup-info.txt"
+        mode: '0644'
+      tags: ['backup', 'info']
+
+    - name: Display backup location
+      ansible.builtin.debug:
+        msg:
+          - "Backup completed at: {{ backup_dir }}/{{ backup_timestamp }}"
+          - "Contents:"
+          - "  - portainer-data.tar.gz"
+          - "  - traefik-data.tar.gz"
+          - "  - swarm-nodes.txt"
+          - "  - swarm-services.txt"
+          - "  - swarm-networks.txt"
+          - "  - docker-daemon.json"
+          - "  - docker-images.txt"
+          - "  - backup-info.txt"
+      tags: ['backup', 'info']

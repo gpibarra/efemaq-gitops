@@ -1,0 +1,190 @@
+---
+# Tareas principales para instalación de Portainer
+- name: Create Portainer data directory
+  ansible.builtin.file:
+    path: "{{ portainer_data_dir }}"
+    state: directory
+    mode: '0755'
+  tags: ['portainer', 'setup']
+
+- name: Create Portainer volume
+  community.docker.docker_volume:
+    name: "{{ portainer_volume_name }}"
+    driver: local
+    state: present
+  tags: ['portainer', 'setup']
+
+- name: Connect to Traefik network if enabled
+  community.docker.docker_network:
+    name: "{{ portainer_traefik_network }}"
+    state: present
+  when: portainer_use_traefik
+  tags: ['portainer', 'setup', 'traefik']
+
+- name: Pull Portainer Docker image
+  community.docker.docker_image:
+    name: "{{ portainer_image }}"
+    source: pull
+    state: present
+  tags: ['portainer', 'install']
+
+- name: Set Portainer labels for Traefik
+  ansible.builtin.set_fact:
+    portainer_computed_labels: >-
+      {{
+        portainer_labels | combine({
+          'traefik.enable': 'true',
+          'traefik.http.routers.portainer.rule': 'Host(`' + portainer_domain + '`)',
+          'traefik.http.routers.portainer.entrypoints': 'websecure',
+          'traefik.http.routers.portainer.tls': 'true',
+          'traefik.http.routers.portainer.tls.certresolver': 'letsencrypt',
+          'traefik.http.services.portainer.loadbalancer.server.port': '9000',
+          'traefik.docker.network': portainer_traefik_network
+        })
+      }}
+  when: portainer_use_traefik
+  tags: ['portainer', 'deploy']
+
+- name: Set Portainer labels without Traefik
+  ansible.builtin.set_fact:
+    portainer_computed_labels: "{{ portainer_labels }}"
+  when: not portainer_use_traefik
+  tags: ['portainer', 'deploy']
+
+- name: Deploy Portainer container with Traefik
+  community.docker.docker_container:
+    name: "{{ portainer_container_name }}"
+    image: "{{ portainer_image }}"
+    state: started
+    restart_policy: "{{ portainer_restart_policy }}"
+    # Using 'networks' parameter for multiple network attachment
+    # Note: Cannot use 'network_mode' when specifying multiple networks
+    networks:
+      - name: "{{ portainer_network }}"
+      - name: "{{ portainer_traefik_network }}"
+    volumes:
+      - "{{ portainer_volume_name }}:/data"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    env: "{{ portainer_environment_vars }}"
+    labels: "{{ portainer_computed_labels }}"
+  when: portainer_use_traefik
+  tags: ['portainer', 'deploy']
+
+- name: Deploy Portainer container without Traefik (standalone mode)
+  community.docker.docker_container:
+    name: "{{ portainer_container_name }}"
+    image: "{{ portainer_image }}"
+    state: started
+    restart_policy: "{{ portainer_restart_policy }}"
+    # Using 'network_mode' for single network and published ports
+    # Note: Cannot specify 'networks' list when using 'network_mode'
+    network_mode: "{{ portainer_network }}"
+    ports:
+      - "{{ portainer_port }}:9000"
+      - "{{ portainer_port_ssl }}:9443"
+    volumes:
+      - "{{ portainer_volume_name }}:/data"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    env: "{{ portainer_environment_vars }}"
+    labels: "{{ portainer_computed_labels }}"
+  when:
+    - not portainer_use_traefik
+    - portainer_deploy_mode == "standalone"
+  tags: ['portainer', 'deploy']
+
+- name: Deploy Portainer as Swarm service
+  community.docker.docker_swarm_service:
+    name: "{{ portainer_service_name }}"
+    image: "{{ portainer_image }}"
+    state: present
+    replicas: "{{ portainer_replicas }}"
+    publish:
+      - published_port: "{{ portainer_port }}"
+        target_port: 9000
+        protocol: tcp
+        mode: host
+      - published_port: "{{ portainer_port_ssl }}"
+        target_port: 9443
+        protocol: tcp
+        mode: host
+    networks:
+      - "{{ portainer_network }}"
+    mounts:
+      - source: /var/lib/portainer
+        target: /data
+        type: bind
+      - source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        type: bind
+    env: "{{ portainer_environment_vars }}"
+    labels: "{{ portainer_computed_labels }}"
+    placement:
+      constraints:
+        - node.role == manager
+    update_config:
+      parallelism: 1
+      delay: 10s
+      failure_action: rollback
+  when: portainer_deploy_mode == "swarm"
+  tags: ['portainer', 'deploy', 'swarm']
+
+- name: Wait for Portainer service to be running (Swarm mode)
+  ansible.builtin.command: docker service ps {{ portainer_service_name }} --filter "desired-state=running" --format "{{"{{"}}.CurrentState{{"}}"}}"
+  register: portainer_service_status
+  until: portainer_service_status.stdout is search("Running")
+  retries: 12
+  delay: 5
+  changed_when: false
+  when: portainer_deploy_mode == "swarm"
+  tags: ['portainer', 'verify']
+
+- name: Wait for Portainer port to be ready (Swarm mode)
+  ansible.builtin.wait_for:
+    port: "{{ portainer_port_ssl }}"
+    delay: 10
+    timeout: 90
+  when: portainer_deploy_mode == "swarm"
+  tags: ['portainer', 'verify']
+
+- name: Wait for Portainer to be ready (standalone with Traefik)
+  ansible.builtin.wait_for:
+    port: 9000
+    delay: 5
+    timeout: 60
+  when:
+    - portainer_deploy_mode == "standalone"
+    - portainer_use_traefik
+  tags: ['portainer', 'verify']
+
+- name: Wait for Portainer to be ready (standalone without Traefik)
+  ansible.builtin.wait_for:
+    port: "{{ portainer_port_ssl }}"
+    delay: 5
+    timeout: 60
+  when:
+    - portainer_deploy_mode == "standalone"
+    - not portainer_use_traefik
+  tags: ['portainer', 'verify']
+
+- name: Display Portainer access information (with Traefik)
+  ansible.builtin.debug:
+    msg:
+      - "Portainer has been deployed successfully!"
+      - "Access Portainer at: https://{{ portainer_domain }}"
+      - ""
+      - "Note: You will need to set up the admin password on first login."
+      - "SSL certificate will be automatically generated by Let's Encrypt via Traefik."
+  when: portainer_use_traefik
+  tags: ['portainer', 'verify']
+
+- name: Display Portainer access information (without Traefik)
+  ansible.builtin.debug:
+    msg:
+      - "Portainer has been deployed successfully!"
+      - "Access Portainer at:"
+      - "  HTTP:  http://{{ ansible_host }}:{{ portainer_port }}"
+      - "  HTTPS: https://{{ ansible_host }}:{{ portainer_port_ssl }}"
+      - ""
+      - "Note: You will need to set up the admin password on first login."
+  when: not portainer_use_traefik
+  tags: ['portainer', 'verify']

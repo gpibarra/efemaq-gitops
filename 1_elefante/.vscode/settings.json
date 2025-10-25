@@ -1,0 +1,6 @@
+{
+    "local-history.path": "${workspaceFolder}/.vscode/",
+    "git.openRepositoryInParentFolders": "always",
+    "remote.SSH.configFile": "./.ssh/config",
+    "ansible.python.interpreterPath": "/usr/bin/python3",
+}

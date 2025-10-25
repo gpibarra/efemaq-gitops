@@ -1,0 +1,139 @@
+---
+- name: Server Statistics - RAM, CPU, Disk Usage
+  hosts: all
+  become: false
+  gather_facts: true
+
+  tasks:
+    - name: Display System Information Header
+      debug:
+        msg:
+          - "=============================================="
+          - "      SERVER STATISTICS REPORT"
+          - "      Host: {{ inventory_hostname }}"
+          - "      IP: {{ ansible_host }}"
+          - "=============================================="
+
+    - name: Get Memory Statistics
+      shell: |
+        total=$(free -h | awk '/^Mem:/ {print $2}')
+        used=$(free -h | awk '/^Mem:/ {print $3}')
+        available=$(free -h | awk '/^Mem:/ {print $7}')
+        percent=$(free | awk '/^Mem:/ {printf "%.1f", ($3/$2)*100}')
+        echo "Total: $total | Used: $used | Available: $available | Usage: ${percent}%"
+      register: memory_stats
+      changed_when: false
+
+    - name: Display Memory Statistics
+      debug:
+        msg:
+          - ""
+          - "📊 MEMORY (RAM)"
+          - "{{ memory_stats.stdout }}"
+
+    - name: Get CPU Information
+      shell: |
+        cpu_count=$(nproc)
+        cpu_model=$(lscpu | grep "Model name" | sed 's/Model name://g' | xargs)
+        cpu_usage=$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1"%"}')
+        load_avg=$(uptime | awk -F'load average:' '{print $2}' | xargs)
+        echo "CPUs: $cpu_count | Model: $cpu_model | Usage: $cpu_usage | Load Avg: $load_avg"
+      register: cpu_stats
+      changed_when: false
+
+    - name: Display CPU Statistics
+      debug:
+        msg:
+          - ""
+          - "💻 CPU"
+          - "{{ cpu_stats.stdout }}"
+
+    - name: Get Disk Usage Statistics
+      shell: |
+        df -h / | awk 'NR==2 {print "Total: "$2" | Used: "$3" | Available: "$4" | Usage: "$5" | Mounted: "$6}'
+      register: disk_stats
+      changed_when: false
+
+    - name: Display Disk Statistics
+      debug:
+        msg:
+          - ""
+          - "💾 DISK (Root Filesystem)"
+          - "{{ disk_stats.stdout }}"
+
+    - name: Get All Mounted Filesystems
+      shell: |
+        df -h -x tmpfs -x devtmpfs | awk 'NR>1 {printf "%-20s | Total: %-8s | Used: %-8s | Avail: %-8s | Usage: %-6s | Mount: %s\n", $1, $2, $3, $4, $5, $6}'
+      register: all_disks
+      changed_when: false
+
+    - name: Display All Filesystem Statistics
+      debug:
+        msg:
+          - ""
+          - "📁 ALL FILESYSTEMS"
+          - "{{ all_disks.stdout_lines }}"
+
+    - name: Get System Uptime
+      shell: uptime -p
+      register: uptime_info
+      changed_when: false
+
+    - name: Display Uptime
+      debug:
+        msg:
+          - ""
+          - "⏱️  UPTIME"
+          - "{{ uptime_info.stdout }}"
+
+    - name: Get Docker Statistics (if Docker is installed)
+      shell: |
+        if command -v docker &> /dev/null; then
+          containers_running=$(docker ps -q | wc -l)
+          containers_total=$(docker ps -aq | wc -l)
+          images=$(docker images -q | wc -l)
+          volumes=$(docker volume ls -q | wc -l)
+          echo "Running Containers: $containers_running | Total Containers: $containers_total | Images: $images | Volumes: $volumes"
+        else
+          echo "Docker not installed"
+        fi
+      register: docker_stats
+      changed_when: false
+      failed_when: false
+
+    - name: Display Docker Statistics
+      debug:
+        msg:
+          - ""
+          - "🐳 DOCKER"
+          - "{{ docker_stats.stdout }}"
+      when: docker_stats.rc == 0
+
+    - name: Get Docker Swarm Statistics (if Swarm is active)
+      shell: |
+        if docker info 2>/dev/null | grep -q "Swarm: active"; then
+          nodes=$(docker node ls --format "{{ '{{' }}.Hostname{{ '}}' }}" 2>/dev/null | wc -l)
+          services=$(docker service ls --format "{{ '{{' }}.Name{{ '}}' }}" 2>/dev/null | wc -l)
+          echo "Swarm Nodes: $nodes | Services: $services"
+        else
+          echo "Swarm not active"
+        fi
+      register: swarm_stats
+      changed_when: false
+      failed_when: false
+
+    - name: Display Docker Swarm Statistics
+      debug:
+        msg:
+          - ""
+          - "🐝 DOCKER SWARM"
+          - "{{ swarm_stats.stdout }}"
+      when: swarm_stats.rc == 0
+
+    - name: Display Footer
+      debug:
+        msg:
+          - ""
+          - "=============================================="
+          - "      END OF STATISTICS REPORT"
+          - "=============================================="

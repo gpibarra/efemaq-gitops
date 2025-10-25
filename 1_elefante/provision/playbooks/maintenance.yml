@@ -1,0 +1,82 @@
+---
+# Playbook para tareas de mantenimiento
+- name: System Maintenance Tasks
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Update apt cache and upgrade packages
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+        autoremove: true
+        autoclean: true
+      when: ansible_os_family == "Debian"
+      tags: ['update', 'maintenance']
+
+    - name: Clean Docker resources
+      when: ansible_facts['docker_version'] is defined
+      block:
+        - name: Remove unused Docker images
+          community.docker.docker_prune:
+            images: true
+            images_filters:
+              dangling: false
+          tags: ['docker', 'cleanup']
+
+        - name: Remove unused Docker volumes
+          community.docker.docker_prune:
+            volumes: true
+          tags: ['docker', 'cleanup']
+
+        - name: Remove unused Docker networks
+          community.docker.docker_prune:
+            networks: true
+          tags: ['docker', 'cleanup']
+
+        - name: Remove stopped containers
+          community.docker.docker_prune:
+            containers: true
+          tags: ['docker', 'cleanup']
+
+    - name: Check disk space
+      ansible.builtin.command: df -h
+      register: disk_space
+      changed_when: false
+      tags: ['info', 'disk']
+
+    - name: Display disk space
+      ansible.builtin.debug:
+        msg: "{{ disk_space.stdout_lines }}"
+      tags: ['info', 'disk']
+
+    - name: Check Docker containers status
+      ansible.builtin.command: docker ps -a
+      register: docker_status
+      changed_when: false
+      when: ansible_facts['docker_version'] is defined
+      tags: ['info', 'docker']
+
+    - name: Display Docker containers
+      ansible.builtin.debug:
+        msg: "{{ docker_status.stdout_lines }}"
+      when: ansible_facts['docker_version'] is defined
+      tags: ['info', 'docker']
+
+    - name: Collect system metrics
+      ansible.builtin.setup:
+        gather_subset:
+          - hardware
+          - network
+      tags: ['info', 'metrics']
+
+    - name: Display system information
+      ansible.builtin.debug:
+        msg:
+          - "Hostname: {{ ansible_hostname }}"
+          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel: {{ ansible_kernel }}"
+          - "CPU Cores: {{ ansible_processor_vcpus }}"
+          - "Memory: {{ ansible_memtotal_mb }} MB"
+          - "Uptime: {{ ansible_uptime_seconds | int // 86400 }} days"
+      tags: ['info', 'metrics']

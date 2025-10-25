@@ -1,2 +1,23 @@
 * text=auto
 * eol=lf
+
+# Git-crypt configuration
+# Files matching these patterns will be automatically encrypted
+
+# Encrypt all secrets.yml files
+**/secrets.yml filter=git-crypt diff=git-crypt
+**/secrets.yaml filter=git-crypt diff=git-crypt
+
+# Encrypt files with .secrets extension
+**/*.secrets filter=git-crypt diff=git-crypt
+
+# Encrypt everything in .secrets/ directories
+**/.secrets/** filter=git-crypt diff=git-crypt
+
+# Encrypt SSH private keys
+**/*_key filter=git-crypt diff=git-crypt
+**/*.pem filter=git-crypt diff=git-crypt
+
+# Encrypt environment-specific secret files
+**/.env.* filter=git-crypt diff=git-crypt
+**/.env filter=git-crypt diff=git-crypt

@@ -1,0 +1,45 @@
+---
+# Variables por defecto para Portainer
+portainer_version: "latest"
+portainer_image: "portainer/portainer-ce:{{ portainer_version }}"
+
+# Modo de despliegue
+portainer_deploy_mode: "swarm"  # swarm o standalone
+
+# Configuración de contenedor (standalone)
+portainer_container_name: "portainer"
+portainer_restart_policy: "unless-stopped"
+
+# Configuración de servicio Swarm
+portainer_service_name: "portainer"
+portainer_replicas: 1
+
+# Puertos
+portainer_port: 9000
+portainer_port_ssl: 9443
+
+# Volúmenes y directorios
+portainer_data_dir: "/var/lib/portainer"
+portainer_volume_name: "portainer_data"
+
+# Configuración de red
+portainer_network: "swarm_network"  # Red overlay de Swarm
+
+# Traefik integration
+portainer_use_traefik: false
+portainer_domain: "portainer.{{ domain_name }}"
+portainer_traefik_network: "traefik-public"
+
+# Opciones adicionales
+portainer_enable_edge_compute: false
+
+# Variables de entorno adicionales
+portainer_environment_vars: {}
+
+# Habilitar TLS
+portainer_enable_tls: true
+
+# Labels para el contenedor (se generarán dinámicamente en tasks)
+portainer_labels:
+  description: "Portainer - Docker Management UI"
+  managed_by: "ansible"

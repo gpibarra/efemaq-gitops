@@ -1,0 +1,74 @@
+---
+# Traefik Dynamic Configuration
+
+# HTTP Configuration
+http:
+{% if traefik_security_headers_enabled %}
+  # HTTP Middlewares
+  middlewares:
+    # Security headers
+    security-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 31536000
+        frameDeny: true
+        customFrameOptionsValue: "SAMEORIGIN"
+
+    # Compression
+    compression:
+      compress: {}
+{% if traefik_dashboard_auth_enabled %}
+
+    # Dashboard authentication
+    dashboard-auth:
+      basicAuth:
+        users:
+          - "{{ traefik_dashboard_auth_users }}"
+{% endif %}
+{% endif %}
+
+{% if traefik_dashboard_enabled and not traefik_dashboard_insecure %}
+  # Dashboard router configuration (only when not in insecure mode)
+  routers:
+    dashboard:
+      rule: "Host(`{{ traefik_dashboard_domain }}`)"
+      entryPoints:
+{% if traefik_ssl_mode != "disabled" %}
+        - websecure
+{% else %}
+        - web
+{% endif %}
+      service: api@internal
+{% if traefik_dashboard_auth_enabled %}
+      middlewares:
+        - dashboard-auth
+{% endif %}
+{% if traefik_ssl_mode != "disabled" %}
+      tls: {}
+{% endif %}
+{% endif %}
+
+# TLS Configuration
+tls:
+  options:
+    default:
+      minVersion: {{ traefik_tls_min_version }}
+{% if traefik_ssl_mode != "disabled" %}
+      cipherSuites:
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+        - TLS_AES_128_GCM_SHA256
+        - TLS_AES_256_GCM_SHA384
+        - TLS_CHACHA20_POLY1305_SHA256
+{% endif %}
+
+{% if traefik_ssl_mode == "selfsigned" %}
+  certificates:
+    - certFile: /certs/cert.pem
+      keyFile: /certs/key.pem
+{% endif %}

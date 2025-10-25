@@ -1,0 +1,33 @@
+# Ansible
+*.retry
+*.log
+.ansible/
+ansible.log
+
+# Cache
+.cache/
+/tmp/
+
+# Vault password files
+.vault_pass
+vault_pass.txt
+
+# Facts cache
+ansible_facts/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+
+# Environment
+.env
+.venv
+env/
+venv/
+
+# IDE
+.vscode/
+.idea/

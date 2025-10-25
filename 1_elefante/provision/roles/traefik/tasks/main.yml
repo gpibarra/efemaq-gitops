@@ -1,0 +1,264 @@
+---
+# Tareas principales para instalación de Traefik
+
+- name: Create Traefik network (standalone mode)
+  community.docker.docker_network:
+    name: "{{ traefik_network_name }}"
+    state: present
+  when: traefik_deploy_mode == "standalone"
+  tags: ['traefik', 'setup']
+
+- name: Create Traefik overlay network (Swarm mode)
+  community.docker.docker_network:
+    name: "{{ traefik_network_name }}"
+    driver: overlay
+    driver_options:
+      encrypted: "true"
+    attachable: true
+    scope: swarm
+    state: present
+  when: traefik_deploy_mode == "swarm"
+  tags: ['traefik', 'setup', 'swarm']
+
+- name: Create Traefik configuration directory
+  ansible.builtin.file:
+    path: "{{ traefik_config_dir }}"
+    state: directory
+    mode: '0755'
+  tags: ['traefik', 'setup']
+
+- name: Create Traefik data directory
+  ansible.builtin.file:
+    path: "{{ traefik_data_dir }}"
+    state: directory
+    mode: '0755'
+  tags: ['traefik', 'setup']
+
+- name: Create acme.json file for Let's Encrypt
+  ansible.builtin.file:
+    path: "{{ traefik_acme_storage }}"
+    state: touch
+    mode: '0600'
+  when: traefik_ssl_mode == "letsencrypt"
+  tags: ['traefik', 'setup', 'ssl']
+
+- name: Create self-signed certificate directory
+  ansible.builtin.file:
+    path: "{{ traefik_selfsigned_cert_dir }}"
+    state: directory
+    mode: '0755'
+  when: traefik_ssl_mode == "selfsigned"
+  tags: ['traefik', 'setup', 'ssl']
+
+- name: Generate self-signed certificate
+  ansible.builtin.command:
+    cmd: >
+      openssl req -x509 -nodes -days {{ traefik_selfsigned_cert_days }}
+      -newkey rsa:2048
+      -keyout {{ traefik_selfsigned_key_file }}
+      -out {{ traefik_selfsigned_cert_file }}
+      -subj "{{ traefik_selfsigned_cert_subject }}"
+    creates: "{{ traefik_selfsigned_cert_file }}"
+  when: traefik_ssl_mode == "selfsigned"
+  tags: ['traefik', 'setup', 'ssl']
+
+- name: Deploy Traefik static configuration
+  ansible.builtin.template:
+    src: traefik.yml.j2
+    dest: "{{ traefik_config_dir }}/traefik.yml"
+    mode: '0644'
+  notify: restart traefik
+  tags: ['traefik', 'config']
+
+- name: Deploy Traefik dynamic configuration
+  ansible.builtin.template:
+    src: dynamic.yml.j2
+    dest: "{{ traefik_config_dir }}/dynamic.yml"
+    mode: '0644'
+  notify: restart traefik
+  tags: ['traefik', 'config']
+
+- name: Pull Traefik Docker image
+  community.docker.docker_image:
+    name: "{{ traefik_image }}"
+    source: pull
+    state: present
+  tags: ['traefik', 'install']
+
+- name: Set Traefik volumes for Let's Encrypt
+  ansible.builtin.set_fact:
+    traefik_volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "{{ traefik_config_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro"
+      - "{{ traefik_config_dir }}/dynamic.yml:/etc/traefik/dynamic.yml:ro"
+      - "{{ traefik_data_dir }}:/data"
+  when: traefik_ssl_mode == "letsencrypt"
+  tags: ['traefik', 'deploy']
+
+- name: Set Traefik volumes for self-signed certificates
+  ansible.builtin.set_fact:
+    traefik_volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "{{ traefik_config_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro"
+      - "{{ traefik_config_dir }}/dynamic.yml:/etc/traefik/dynamic.yml:ro"
+      - "{{ traefik_data_dir }}:/data"
+      - "{{ traefik_selfsigned_cert_dir }}:/certs:ro"
+  when: traefik_ssl_mode == "selfsigned"
+  tags: ['traefik', 'deploy']
+
+- name: Set Traefik volumes for disabled SSL
+  ansible.builtin.set_fact:
+    traefik_volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "{{ traefik_config_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro"
+      - "{{ traefik_config_dir }}/dynamic.yml:/etc/traefik/dynamic.yml:ro"
+      - "{{ traefik_data_dir }}:/data"
+  when: traefik_ssl_mode == "disabled"
+  tags: ['traefik', 'deploy']
+
+- name: Set empty dashboard labels for Swarm mode
+  ansible.builtin.set_fact:
+    traefik_dashboard_labels: {}
+  when: traefik_deploy_mode == "swarm"
+  tags: ['traefik', 'deploy']
+
+- name: Set dashboard labels for standalone mode (Let's Encrypt with auth)
+  ansible.builtin.set_fact:
+    traefik_dashboard_labels:
+      traefik.enable: "true"
+      traefik.http.routers.traefik-dashboard.rule: "Host(`{{ traefik_dashboard_domain }}`)"
+      traefik.http.routers.traefik-dashboard.entrypoints: "websecure"
+      traefik.http.routers.traefik-dashboard.tls: "true"
+      traefik.http.routers.traefik-dashboard.tls.certresolver: "letsencrypt"
+      traefik.http.routers.traefik-dashboard.service: "api@internal"
+      traefik.http.routers.traefik-dashboard.middlewares: "traefik-auth"
+      traefik.http.middlewares.traefik-auth.basicauth.users: "{{ traefik_dashboard_auth_users }}"
+  when: traefik_deploy_mode == "standalone" and traefik_ssl_mode == "letsencrypt" and traefik_dashboard_auth_enabled
+  tags: ['traefik', 'deploy']
+
+- name: Set dashboard labels for standalone mode (other configurations)
+  ansible.builtin.set_fact:
+    traefik_dashboard_labels:
+      traefik.enable: "true"
+      traefik.http.routers.traefik-dashboard.rule: "Host(`{{ traefik_dashboard_domain }}`)"
+      traefik.http.routers.traefik-dashboard.service: "api@internal"
+  when: traefik_deploy_mode == "standalone" and (traefik_ssl_mode != "letsencrypt" or not traefik_dashboard_auth_enabled)
+  tags: ['traefik', 'deploy']
+
+- name: Deploy Traefik container (standalone mode)
+  community.docker.docker_container:
+    name: "{{ traefik_container_name }}"
+    image: "{{ traefik_image }}"
+    state: started
+    restart_policy: "{{ traefik_restart_policy }}"
+    networks:
+      - name: "{{ traefik_network_name }}"
+    ports:
+      - "{{ traefik_http_port }}:80"
+      - "{{ traefik_https_port }}:443"
+      - "{{ traefik_dashboard_port }}:8080"
+    volumes: "{{ traefik_volumes }}"
+    env: "{{ traefik_environment_vars }}"
+    labels: "{{ traefik_dashboard_labels }}"
+  when: traefik_deploy_mode == "standalone"
+  tags: ['traefik', 'deploy']
+
+- name: Prepare Traefik mounts for Swarm
+  ansible.builtin.set_fact:
+    traefik_swarm_mounts:
+      - source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        type: bind
+        readonly: true
+      - source: "{{ traefik_config_dir }}/traefik.yml"
+        target: /etc/traefik/traefik.yml
+        type: bind
+        readonly: true
+      - source: "{{ traefik_config_dir }}/dynamic.yml"
+        target: /etc/traefik/dynamic.yml
+        type: bind
+        readonly: true
+      - source: "{{ traefik_data_dir }}"
+        target: /data
+        type: bind
+  when: traefik_deploy_mode == "swarm"
+  tags: ['traefik', 'deploy', 'swarm']
+
+- name: Add self-signed cert mount for Swarm
+  ansible.builtin.set_fact:
+    traefik_swarm_mounts: "{{ traefik_swarm_mounts + [{'source': traefik_selfsigned_cert_dir, 'target': '/certs', 'type': 'bind', 'readonly': true}] }}"
+  when:
+    - traefik_deploy_mode == "swarm"
+    - traefik_ssl_mode == "selfsigned"
+  tags: ['traefik', 'deploy', 'swarm']
+
+- name: Deploy Traefik as Swarm service
+  community.docker.docker_swarm_service:
+    name: "{{ traefik_service_name }}"
+    image: "{{ traefik_image }}"
+    state: present
+    replicas: "{{ traefik_replicas }}"
+    publish:
+      - published_port: "{{ traefik_http_port }}"
+        target_port: 80
+        protocol: tcp
+        mode: host
+      - published_port: "{{ traefik_https_port }}"
+        target_port: 443
+        protocol: tcp
+        mode: host
+      - published_port: "{{ traefik_dashboard_port }}"
+        target_port: 8080
+        protocol: tcp
+        mode: host
+    networks:
+      - "{{ traefik_network_name }}"
+    mounts: "{{ traefik_swarm_mounts }}"
+    env: "{{ traefik_environment_vars }}"
+    labels: "{{ traefik_dashboard_labels }}"
+    placement:
+      constraints:
+        - node.role == manager
+  when: traefik_deploy_mode == "swarm"
+  tags: ['traefik', 'deploy', 'swarm']
+
+- name: Wait for Traefik service to be running (Swarm mode)
+  ansible.builtin.command: docker service ps {{ traefik_service_name }} --filter "desired-state=running" --format "{{"{{"}}.CurrentState{{"}}"}}"
+  register: traefik_service_status
+  until: traefik_service_status.stdout is search("Running")
+  retries: 12
+  delay: 5
+  changed_when: false
+  when: traefik_deploy_mode == "swarm"
+  tags: ['traefik', 'verify']
+
+- name: Wait for Traefik port to be ready (Swarm mode)
+  ansible.builtin.wait_for:
+    port: "{{ traefik_http_port }}"
+    delay: 10
+    timeout: 90
+  when: traefik_deploy_mode == "swarm"
+  tags: ['traefik', 'verify']
+
+- name: Wait for Traefik to be ready (standalone mode)
+  ansible.builtin.wait_for:
+    port: "{{ traefik_http_port }}"
+    delay: 3
+    timeout: 60
+  when: traefik_deploy_mode == "standalone"
+  tags: ['traefik', 'verify']
+
+- name: Display Traefik information
+  ansible.builtin.debug:
+    msg:
+      - "Traefik has been deployed successfully!"
+      - "Dashboard URL: {% if traefik_ssl_mode != 'disabled' %}https{% else %}http{% endif %}://{{ traefik_dashboard_domain }}"
+      - "HTTP Port: {{ traefik_http_port }}"
+      - "HTTPS Port: {{ traefik_https_port }}"
+      - "Network: {{ traefik_network_name }}"
+      - ""
+      - "SSL Mode: {{ traefik_ssl_mode | upper }}"
+      - "{% if traefik_ssl_mode == 'letsencrypt' %}Let's Encrypt is ENABLED{% endif %}"
+      - "{% if traefik_ssl_mode == 'selfsigned' %}Using SELF-SIGNED certificates (for testing){% endif %}"
+      - "{% if traefik_dashboard_auth_enabled %}Dashboard authentication is ENABLED{% endif %}"
+  tags: ['traefik', 'verify']

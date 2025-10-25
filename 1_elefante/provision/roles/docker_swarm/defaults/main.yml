@@ -1,0 +1,24 @@
+---
+# Variables por defecto para Docker Swarm
+
+# Modo de operación del nodo
+swarm_mode: "manager"  # manager o worker
+
+# Configuración del manager
+swarm_advertise_addr: "{{ ansible_default_ipv4.address }}"
+swarm_listen_addr: "0.0.0.0:2377"
+
+# Token para join (se genera automáticamente si es manager)
+# swarm_join_token: ""
+# swarm_manager_address: ""
+
+# Configuración de red overlay
+swarm_network_name: "swarm_network"
+swarm_network_driver: "overlay"
+swarm_network_attachable: true
+
+# Labels para el nodo
+swarm_node_labels: {}
+
+# Configuración de disponibilidad
+swarm_node_availability: "active"  # active, pause, drain

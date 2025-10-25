@@ -1,0 +1,84 @@
+---
+# Traefik Static Configuration
+
+# Global configuration
+global:
+  checkNewVersion: true
+  sendAnonymousUsage: false
+
+# API and Dashboard
+api:
+  dashboard: {{ traefik_dashboard_enabled | lower }}
+  insecure: {{ traefik_dashboard_insecure | default(false) | lower }}
+
+# Entry Points
+entryPoints:
+  web:
+    address: ":80"
+{% if traefik_ssl_redirect and traefik_ssl_mode != "disabled" %}
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+{% endif %}
+
+  websecure:
+    address: ":443"
+{% if traefik_ssl_mode == "letsencrypt" %}
+    http:
+      tls:
+        certResolver: letsencrypt
+        options: default
+{% elif traefik_ssl_mode == "selfsigned" %}
+    http:
+      tls:
+        options: default
+{% endif %}
+
+# Certificate Resolvers
+{% if traefik_ssl_mode == "letsencrypt" %}
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: {{ traefik_acme_email }}
+      storage: /data/acme.json
+      caServer: {{ traefik_acme_ca_server }}
+      httpChallenge:
+        entryPoint: web
+{% endif %}
+
+# Providers
+providers:
+{% if traefik_docker_swarm_mode %}
+  swarm:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: {{ traefik_docker_exposedbydefault | lower }}
+    network: {{ traefik_docker_network }}
+    watch: true
+{% else %}
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: {{ traefik_docker_exposedbydefault | lower }}
+    network: {{ traefik_docker_network }}
+    watch: true
+{% endif %}
+
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+# Logging
+log:
+  level: {{ traefik_log_level }}
+  format: json
+
+{% if traefik_access_log_enabled %}
+# Access logs
+accessLog:
+  format: json
+  fields:
+    defaultMode: keep
+    headers:
+      defaultMode: keep
+{% endif %}

@@ -1,0 +1,76 @@
+---
+# Traefik configuration defaults
+
+# Traefik version
+traefik_version: "v3.2"
+traefik_image: "traefik:{{ traefik_version }}"
+
+# Modo de despliegue
+traefik_deploy_mode: "swarm"  # swarm o standalone
+
+# Installation directory
+traefik_config_dir: "/etc/traefik"
+traefik_data_dir: "/var/lib/traefik"
+
+# Network configuration
+traefik_network_name: "swarm_network"  # Red overlay de Swarm
+traefik_http_port: 80
+traefik_https_port: 443
+traefik_dashboard_port: 8080
+
+# Dashboard configuration
+traefik_dashboard_enabled: true
+traefik_dashboard_domain: "traefik.{{ domain_name }}"
+traefik_dashboard_auth_enabled: true
+# Traefik Dashboard Authentication
+# Genera el hash con: htpasswd -nb admin tu_password | sed -e s/\\$/\\$\\$/g
+# Por defecto: usuario "admin", password "changeme" (CAMBIAR en producción!)
+# traefik_dashboard_auth_users: "admin:$$apr1$$h8n7s1q2$$WjQVzYt5L8KqB9X3LmN0k1"
+traefik_dashboard_auth_users_username: "admin"
+traefik_dashboard_auth_users_password: "{{ lookup('password', './.secrets/' + env + '/' + inventory_hostname + '/' + ansible_user + '/traefik/dashboard_admin_pwd length=16 chars=ascii_letters,digits') }}"
+traefik_dashboard_auth_users: "{{ traefik_dashboard_auth_users_username }}:{{ traefik_dashboard_auth_users_password | password_hash('md5') }}"
+
+# SSL/TLS Mode: "letsencrypt", "selfsigned", or "disabled"
+traefik_ssl_mode: "letsencrypt"
+
+# Let's Encrypt configuration (when traefik_ssl_mode: "letsencrypt")
+traefik_acme_enabled: true
+traefik_acme_email: "admin@{{ domain_name }}"
+traefik_acme_storage: "{{ traefik_data_dir }}/acme.json"
+traefik_acme_ca_server: "https://acme-v02.api.letsencrypt.org/directory"  # Production
+# traefik_acme_ca_server: "https://acme-staging-v02.api.letsencrypt.org/directory"  # Staging
+
+# Self-signed certificate configuration (when traefik_ssl_mode: "selfsigned")
+traefik_selfsigned_cert_dir: "{{ traefik_config_dir }}/certs"
+traefik_selfsigned_cert_file: "{{ traefik_selfsigned_cert_dir }}/cert.pem"
+traefik_selfsigned_key_file: "{{ traefik_selfsigned_cert_dir }}/key.pem"
+traefik_selfsigned_cert_days: 365
+traefik_selfsigned_cert_subject: "/C=AR/ST=BuenosAires/L=BuenosAires/O=Development/CN=*.{{ domain_name }}"
+
+# SSL/TLS configuration
+traefik_ssl_redirect: true
+traefik_tls_min_version: "VersionTLS12"
+
+# Docker provider configuration
+traefik_docker_enabled: true
+traefik_docker_exposedbydefault: false
+traefik_docker_network: "{{ traefik_network_name }}"
+traefik_docker_swarm_mode: true  # Habilitar modo Swarm
+
+# Logging
+traefik_log_level: "INFO"  # DEBUG, INFO, WARN, ERROR
+traefik_access_log_enabled: true
+
+# Security headers
+traefik_security_headers_enabled: true
+
+# Container configuration (standalone)
+traefik_container_name: "traefik"
+traefik_restart_policy: "unless-stopped"
+
+# Service configuration (swarm)
+traefik_service_name: "traefik"
+traefik_replicas: 1
+
+# Environment variables
+traefik_environment_vars: {}

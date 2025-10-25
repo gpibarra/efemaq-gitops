@@ -1,0 +1,88 @@
+---
+# Tareas principales para instalación de Docker
+- name: Remove old Docker versions
+  ansible.builtin.apt:
+    name:
+      - docker
+      - docker-engine
+      - docker.io
+      - containerd
+      - runc
+    state: absent
+  tags: ['docker', 'cleanup']
+
+- name: Add Docker GPG key
+  ansible.builtin.apt_key:
+    url: "{{ docker_apt_gpg_key }}"
+    state: present
+  tags: ['docker', 'setup']
+
+- name: Add Docker repository
+  ansible.builtin.apt_repository:
+    repo: "{{ docker_apt_repository }}"
+    state: present
+    update_cache: true
+  tags: ['docker', 'setup']
+
+- name: Install Docker packages
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: "{{ docker_package_state }}"
+    update_cache: true
+  tags: ['docker', 'install']
+
+- name: Ensure Docker configuration directory exists
+  ansible.builtin.file:
+    path: /etc/docker
+    state: directory
+    mode: '0755'
+  tags: ['docker', 'config']
+
+- name: Configure Docker daemon
+  ansible.builtin.copy:
+    content: "{{ docker_daemon_options | to_nice_json }}"
+    dest: /etc/docker/daemon.json
+    mode: '0644'
+  notify: restart docker
+  tags: ['docker', 'config']
+
+- name: Ensure Docker service is started and enabled
+  ansible.builtin.systemd:
+    name: docker
+    state: "{{ docker_service_state }}"
+    enabled: "{{ docker_service_enabled }}"
+  tags: ['docker', 'service']
+
+- name: Add users to docker group
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: docker
+    append: true
+  loop: "{{ docker_users }}"
+  when: docker_users | length > 0
+  tags: ['docker', 'users']
+
+- name: Install Docker Python packages
+  ansible.builtin.apt:
+    name:
+      - python3-docker
+      - python3-requests
+    state: present
+    update_cache: false
+  tags: ['docker', 'python']
+
+- name: Verify Docker installation
+  ansible.builtin.command: docker --version
+  register: docker_version_output
+  changed_when: false
+  tags: ['docker', 'verify']
+
+- name: Display Docker version
+  ansible.builtin.debug:
+    msg: "{{ docker_version_output.stdout }}"
+  tags: ['docker', 'verify']

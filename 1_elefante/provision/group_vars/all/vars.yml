@@ -1,0 +1,51 @@
+---
+# Variables globales para todos los hosts (PÚBLICAS - SIN ENCRIPTAR)
+# Los secretos están en secrets.yml (encriptado con git-crypt)
+
+# Configuración de dominio y email
+domain_name: "efemaq.com.ar"
+
+# Configuración de seguridad
+firewall_enabled: true
+fail2ban_enabled: false
+
+# Configuración de Docker
+docker_edition: ce
+docker_users:
+  - "{{ ansible_user }}"
+
+# Configuración de Traefik
+# traefik_version: "v3.5"
+traefik_version: latest
+traefik_dashboard_enabled: true
+traefik_acme_email: "info@efemaq.com.ar"
+# traefik_dashboard_auth_users se define en secrets.yml
+
+# Configuración de Portainer
+# portainer_version: "v2.35"
+portainer_version: latest
+portainer_port: 9000
+portainer_port_ssl: 9443
+portainer_use_traefik: truer
+
+# Configuración de logs
+log_retention_days: 30
+
+# Paquetes comunes a instalar
+common_packages:
+  - nano
+  - vim
+  - htop
+  - curl
+  - wget
+  - git
+  - net-tools
+  - unzip
+  - gzip
+  - unrar
+  - p7zip-full
+  - tmux
+  - python3
+  - python3-pip
+  - jq
+  - dos2unix

@@ -1,0 +1,28 @@
+---
+# Inventario de BOOTSTRAP para configuración inicial - Ambiente de Test
+# Este inventario se usa SOLO LA PRIMERA VEZ con el usuario vagrant
+#
+# Uso:
+#   ansible-playbook -i inventories/test/hosts-bootstrap.yml playbooks/bootstrap.yml -u vagrant --ask-pass --ask-become-pass
+#
+#   O si usas Vagrant con clave insegura:
+#   ansible-playbook -i inventories/test/hosts-bootstrap.yml playbooks/bootstrap.yml -u vagrant --private-key ~/.vagrant.d/insecure_private_key
+#
+# Después del bootstrap, usar hosts.yml normal
+
+all:
+  children:
+    test_servers:
+      hosts:
+        test-server-01:
+          ansible_host: 192.168.56.103
+          # Nota: ansible_user se pasa por línea de comandos con -u vagrant
+          # ansible_user: vagrant  # Usuario inicial de Vagrant
+          ansible_python_interpreter: /usr/bin/python3
+          # No especificar ansible_ssh_private_key_file aquí
+          # Se usará --ask-pass o --private-key según tu setup de Vagrant
+
+      vars:
+        env: test
+        # Variables específicas para bootstrap
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'

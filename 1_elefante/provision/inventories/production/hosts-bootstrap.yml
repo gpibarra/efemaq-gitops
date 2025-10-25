@@ -1,0 +1,30 @@
+---
+# Inventario de BOOTSTRAP para configuración inicial - Ambiente de Producción
+# Este inventario se usa SOLO LA PRIMERA VEZ con el usuario root
+#
+# Uso:
+#   ansible-playbook -i inventories/production/hosts-bootstrap.yml playbooks/bootstrap.yml -u admin --ask-pass --ask-become-pass
+#
+# Después del bootstrap, usar hosts.yml normal
+
+all:
+  children:
+    production_servers:
+      hosts:
+        elefante:
+          # Provider: https://contabo.com/
+          ansible_host: 154.38.181.36 # Ajustar según IP de producción
+          # Nota: ansible_user se pasa por línea de comandos con -u admin
+          # ansible_user: root  # Usuario inicial
+          ansible_python_interpreter: /usr/bin/python3
+          # No especificar ansible_ssh_private_key_file aquí
+          # Se usará --ask-pass para la primera conexión
+
+        # prod-server-02:
+        #   ansible_host: 10.0.0.11
+        #   ansible_python_interpreter: /usr/bin/python3
+
+      vars:
+        env: production
+        # Variables específicas para bootstrap
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'

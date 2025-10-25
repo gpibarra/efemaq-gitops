@@ -1,0 +1,17 @@
+---
+# Handlers para el rol de Portainer
+- name: Restart portainer
+  community.docker.docker_container:
+    name: "{{ portainer_container_name }}"
+    state: started
+    restart: true
+
+- name: Stop portainer
+  community.docker.docker_container:
+    name: "{{ portainer_container_name }}"
+    state: stopped
+
+- name: Remove portainer
+  community.docker.docker_container:
+    name: "{{ portainer_container_name }}"
+    state: absent
